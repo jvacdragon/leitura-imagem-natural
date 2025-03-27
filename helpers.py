@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 
 def geometry_data(geometry, y):
     dtop = geometry[0,0,y]
@@ -27,15 +28,26 @@ def calc_geo(data_dtop, data_dright, data_dbottom, data_dleft, data_angle, x, y)
     return initX, initY, endX, endY
     
 #função que funciona para 
-def merge_boxes(boxes, threshold_distance=20):
+def merge_boxes(boxes, threshold_distance=20, overlap_threshold = 0.1):
     merged = []
     for box in boxes:
         x1, y1, x2, y2 = box
+        current_box_area = (x2 - x1) * (y2 - y1)
         found = False
         for i, m in enumerate(merged):
             mx1, my1, mx2, my2 = m
+            merged_box_area = (mx2 - mx1) * (my2 - my1)
+            
+            xi1 = max(x1, mx1)
+            yi1 = max(y1, my1)
+            xi2 = min(x2, mx2)
+            yi2 = min(y2, my2)
+            
+            inter_area = max(xi2 - xi1, 0) * max(yi2 - yi1, 0)
+            min_area = min(current_box_area, merged_box_area)
+            
             # Verifica se a caixa atual está próxima da caixa merged
-            if (abs(x1 - mx1) < threshold_distance and abs(y1 - my1) < threshold_distance):
+            if ((inter_area > overlap_threshold * min_area) or abs(x1 - mx1) < threshold_distance and abs(y1 - my1) < threshold_distance):
                 # Combina as coordenadas
                 new_x1 = min(x1, mx1)
                 new_y1 = min(y1, my1)
