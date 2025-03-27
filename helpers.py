@@ -26,7 +26,7 @@ def calc_geo(data_dtop, data_dright, data_dbottom, data_dleft, data_angle, x, y)
     
     return initX, initY, endX, endY
     
-
+#função que funciona para 
 def merge_boxes(boxes, threshold_distance=20):
     merged = []
     for box in boxes:

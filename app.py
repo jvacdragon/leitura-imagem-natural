@@ -2,14 +2,10 @@ import pytesseract
 import cv2
 import numpy as np
 from imutils.object_detection import non_max_suppression
-
-from helpers import calc_geo, geometry_data
-
-#from helpers import calc_geo, geometry_data #para identificação dos melhores boxes que nao se sobrepoem
-
+from helpers import calc_geo, geometry_data, merge_boxes
 
 config_tesseract = '--oem 3 --psm 6'
-image = cv2.imread('./src/placarj.webp')
+image = cv2.imread('./src/foto.jpg')
 
 cv2.imshow('original image', image)
 
@@ -43,23 +39,25 @@ for y in range(lines):
             confidences.append(data_scores[x])
             boxes.append((intiX, initY, endX, endY))
 
-print(confidences)
-print(boxes)
-
 detections = non_max_suppression(np.array(boxes), probs=confidences)
-print(detections)
 
 proportionH = image.shape[0]/float(modelH)
 proportionW = image.shape[1]/float(modelW)
 
+processed_boxes = []
 for (initX, initY, endX, endY) in detections:
-    initX = int(initX*proportionW)
-    endX = int(endX*proportionW)
+    initX = int(initX*proportionW - int(initX*proportionW)/20)
+    endX = int(endX*proportionW + int(endX*proportionW)/20)
     initY = int(initY*proportionH)
     endY = int(endY*proportionH)
     
     roi = image[initY:endY, initX:endX]
-    cv2.rectangle(image, (initX, initY), (endX, endY), (0,255,0), 2)
+    
+    print(initX, initY, endX, endY)
+    processed_boxes.append((initX, initY, endX, endY))
+
+for box in merge_boxes(processed_boxes, 100):
+    cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), (0,255,0), 2)
 
 cv2.imshow('image', image)
 
