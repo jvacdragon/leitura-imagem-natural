@@ -1,6 +1,6 @@
 import numpy as np
-import cv2
 
+#retorna os pontos geométricos de distância do centro de uma imagem até o topo, direita, base e esquerda dela, também retorna o angulo para identificar inclinação. Tem como parametro geometry que contém esses dados e y quie indica de qual posição de geometry serão pegos esses dados
 def geometry_data(geometry, y):
     dtop = geometry[0,0,y]
     dright = geometry[0,1,y]
@@ -10,7 +10,9 @@ def geometry_data(geometry, y):
     
     return dtop, dright, dbottom, dleft, angle
 
+#Calcula as coordenadas de x e y, para utilizar nos ROIs, baseada no dados de distancia do calculo anterior e do angulo de inclinação
 def calc_geo(data_dtop, data_dright, data_dbottom, data_dleft, data_angle, x, y):
+    #Multiplicando x e y passados por 4 pois no modelo EAST a imagem é diminuida em 4 vezes, então se faz necessário multiplicar por quatro novamente para achar o offsset(ponto central da imagem) de x e y
     (offsetx, offsety) = (x*4, y*4)
     angles = data_angle
     cos = np.cos(angles)
@@ -27,7 +29,7 @@ def calc_geo(data_dtop, data_dright, data_dbottom, data_dleft, data_angle, x, y)
     
     return initX, initY, endX, endY
     
-#função que funciona para 
+#função que funciona para juntar as bounding boxes que estão bem proximas (threshold_distance) ou que tem uma sobreposição uma na outra (overlap_threshold)
 def merge_boxes(boxes, threshold_distance=20, overlap_threshold = 0.1):
     merged = []
     for box in boxes:
@@ -46,9 +48,7 @@ def merge_boxes(boxes, threshold_distance=20, overlap_threshold = 0.1):
             inter_area = max(xi2 - xi1, 0) * max(yi2 - yi1, 0)
             min_area = min(current_box_area, merged_box_area)
             
-            # Verifica se a caixa atual está próxima da caixa merged
             if ((inter_area > overlap_threshold * min_area) or abs(x1 - mx1) < threshold_distance and abs(y1 - my1) < threshold_distance):
-                # Combina as coordenadas
                 new_x1 = min(x1, mx1)
                 new_y1 = min(y1, my1)
                 new_x2 = max(x2, mx2)

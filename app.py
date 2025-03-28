@@ -5,103 +5,125 @@ from imutils.object_detection import non_max_suppression
 from helpers import calc_geo, geometry_data, merge_boxes
 import re
 
+#configuração do tesseract e leitura da imagem
 config_tesseract = '--oem 3 --psm 6'
-image = cv2.imread('./src/foto.jpg')
 image = cv2.imread('./src/placarj.webp')
 
-cv2.imshow('original image', image)
-
+#Identificando caminho para rede neural treinada e definindo as camadas que serão utilizadas por ela
 model = "./src/frozen_east_text_detection.pb"
 layers = ['feature_fusion/Conv_7/Sigmoid', 'feature_fusion/concat_3']
 
+#Definindo tamanho que imagem terá de largura e altura quando for utilizada pelo modelo de rede neural. No modelo EAST é requisito que esses valores sejam multiplos dew 32
 modelW, modelH = 320,320
 image_resized = cv2.resize(image, (modelW, modelH))
+#Transformando formato da imagem para blob, formato esse que é utilizado de input para o modelo de rede neural
 blob = cv2.dnn.blobFromImage(image_resized, 1.0, (modelW, modelH), swapRB=True, crop=False)
+#Criando a rede neural
 neural_network = cv2.dnn.readNet(model)
 
+#Definindo o input usado na rede neural, no caso a imagem blob
 neural_network.setInput(blob)
 
+#Iniciando o funcionamento da rede neural, com input ja definido, com as camadas a serem usadas e ja recebendo os valores dessas camadas. O primeiro sao os scores, que definem a porcentagem de confiança para existencia de texto em determinada área da imagem e o segundo é geometry, que contém as coordenadas para essas áreas
 scores, geometry = neural_network.forward(layers)
 
+#Dividindom em linhas e colunas os valores de scores
 lines, columns = scores.shape[2:4]
-print(scores.shape)
-     
+
+#definindo nivel de confiança minimo para considerar as areas da imagem   
 confidence_level = 0.8
 boxes = []
 confidences = []
+
+#Passando por todos os scores para definir quais geometry serçao utilizados para formação dos ROIs
 for y in range(lines):
     data_scores = scores[0,0,y]
     
+    #Pegando distancias para formar bounding boxes do ROI referentes aos scores que estçao sendo analizados no momento
     dtop, dright, dbottom, dleft, angle = geometry_data(geometry, y)
     
     for x in range(columns):
+        #verificando se no nivel de confiança a ser olhado está no aceitável ou nao. Caso esteja, é calculada as coordenadas para formar o bounding box da área referente a esse nivel de confiança utilizando a função calc_geo e então essas coordenadas sao adicionadas ao array de boxes
         if(data_scores[x] >= confidence_level):
             
             intiX, initY, endX, endY = calc_geo(dtop[x], dright[x], dbottom[x], dleft[x], angle[x], x, y)
             confidences.append(data_scores[x])
             boxes.append((intiX, initY, endX, endY))
 
+#Utilizando non-max-supression para determinar os melhores dados a serem usados para criar os ROIs
 detections = non_max_suppression(np.array(boxes), probs=confidences)
 
+#Proporção de altura e largura para usar de calculo na criação das bounding boxes na imagem original
 proportionH = image.shape[0]/float(modelH)
 proportionW = image.shape[1]/float(modelW)
 
 processed_boxes = []
 roiImages = []
+
+#Delimitando as coordenadas da bounding boxes dos ROIs. As margens são aumentadas para evitar possiveis erros de detecção
 for (initX, initY, endX, endY) in detections:
     initX = int(initX*proportionW * 0.9)
     endX = int(endX*proportionW  * 1.05)
     initY = int(initY*proportionH * 0.9)
     endY = int(endY*proportionH * 1.05)
     
-    """ processed_boxes.append((initX, initY, endX, endY)) """
-    if endX > initX and endY > initY:  # Verifica se o ROI é válido
+    if endX > initX and endY > initY:
         roi = image[initY:endY, initX:endX]
-        if roi.size > 0:  # Verifica se o ROI não está vazio
+        if roi.size > 0:
             processed_boxes.append((initX, initY, endX, endY))
-    
+
+#Identificando onde se deve fazer o merge das boxes que irçao delimitar o ROI, com base na proximidade dessas boxes e na sobreposição delas umas com as outras
 merged_boxes = merge_boxes(processed_boxes, 100)
 
+#Delimitando a área de todos os ROI (Region of Interest) e adicionando no array dedicado para esses cortes de imagem
 for (initX, initY, endX, endY) in merged_boxes:
-    
     roi = image[initY:endY, initX:endX]
     roiImages.append(roi)
-    cv2.rectangle(image, (initX, initY, endX, endY), (0,255,0), 1)
+    cv2.rectangle(image, (initX, initY), (endX, endY), (0,255,0), 1)
 
+#Onde serão armazenadas os textos da imagem
 strings = []
 
+#Fazendo processamentod a imagem para cada ROI (Region of Interest) encontrado na imagem original
 for i, roi in enumerate(roiImages):
     roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    print(roi.shape)
-    print(f'imaggem {i} média:{np.mean(roi)}')
 
+    #Aumentando tamanho da imagem caso ela tenha altura ou largura menor que 200 pixels para facilitar a leitura dela pelo tessseract
     if(roi.shape[0] < 200 or roi.shape[1] < 200):
         roi = cv2.resize(roi, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
         roi = cv2.dilate(roi, np.ones((3,3), np.uint8))
         roi = cv2.erode(roi, np.ones((3,3), np.uint8))
     
-    if(np.mean(roi) <= 85):
-        """ roi = cv2.threshold(roi, 80, 255, cv2.THRESH_BINARY)[1] """
-        #roi = cv2.adaptiveThreshold(roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 75, 9)
-        """ _, roi = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU) """
-        roi = cv2.bitwise_not(roi)
-        roi = _, roi = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    mean = (np.percentile(roi, 25) + np.percentile(roi, 75))/2
+    
+    #Fazendo o processamento da imagem e aplicando métodos de thresholding e dilatação/erosão basedo na média de pixels da imagem entre os percentis de 25% e 75%
+    if(mean <= 50 ):       
+        _, roi = cv2.threshold(roi, 75, 255, cv2.THRESH_BINARY)
+        roi = cv2.erode(roi, np.ones((3,3), np.uint8))
+        
+    elif(mean <= 100):        
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        roi = clahe.apply(roi)
+        
+        roi = cv2.threshold(roi, 100 - np.mean(roi)/2, 255, cv2.THRESH_BINARY)[1]
+        
+        roi = cv2.erode(roi, np.ones((5,5), np.uint8))
+        roi = cv2.dilate(roi, np.ones((3,3), np.uint8))
     
     elif(np.mean(roi) <= 170):
         roi = cv2.threshold(roi, 150, 255, cv2.THRESH_BINARY)[1]
     else:
         roi = 255 - roi
-        roi = cv2.threshold(roi, 70, 255, cv2.THRESH_BINARY)[1]
-
-
-    #roi = cv2.threshold(roi, 80, 255, cv2.THRESH_BINARY)[1]
-    
-    """ roi = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1] """
-    
-    
-    cv2.imshow(f'roi {i}', roi)
+        roi = cv2.threshold(roi, 70, 255, cv2.THRESH_BINARY)[1]    
     
     string = pytesseract.image_to_string(roi, 'por', config = config_tesseract)
+    
+    #Pós processamento, corrigindo possíveis erros na hora de guardar as informações da imagem
+    string = re.sub(r'[^a-zA-ZÀ-ÿ0-9"\s]', '', string)
+    string = string.replace("\n", " ")
+    string = re.sub(r'^\s*[a-zA-Z]\s', ' ', string)
+    string = re.sub(r'\s[a-zA-Z]\s*$', ' ', string)
+    string = re.sub(r'\s+', ' ', string).strip()
     strings.append(string)
 
 print(strings)
