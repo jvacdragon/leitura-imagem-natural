@@ -5,32 +5,20 @@ from imutils.object_detection import non_max_suppression
 from helpers import calc_geo, geometry_data, merge_boxes
 import re
 
-#configuração do tesseract e leitura da imagem
 config_tesseract = '--oem 3 --psm 6'
 image = cv2.imread('./src/placarj.webp')
 
-#Identificando caminho para rede neural treinada e definindo as camadas que serão utilizadas por ela
 model = "./src/frozen_east_text_detection.pb"
 layers = ['feature_fusion/Conv_7/Sigmoid', 'feature_fusion/concat_3']
 
-#Definindo tamanho que imagem terá de largura e altura quando for utilizada pelo modelo de rede neural. No modelo EAST é requisito que esses valores sejam multiplos dew 32
 modelW, modelH = 320,320
 image_resized = cv2.resize(image, (modelW, modelH))
-#Transformando formato da imagem para blob, formato esse que é utilizado de input para o modelo de rede neural
 blob = cv2.dnn.blobFromImage(image_resized, 1.0, (modelW, modelH), swapRB=True, crop=False)
-#Criando a rede neural
 neural_network = cv2.dnn.readNet(model)
-
-#Definindo o input usado na rede neural, no caso a imagem blob
 neural_network.setInput(blob)
-
-#Iniciando o funcionamento da rede neural, com input ja definido, com as camadas a serem usadas e ja recebendo os valores dessas camadas. O primeiro sao os scores, que definem a porcentagem de confiança para existencia de texto em determinada área da imagem e o segundo é geometry, que contém as coordenadas para essas áreas
 scores, geometry = neural_network.forward(layers)
 
-#Dividindom em linhas e colunas os valores de scores
 lines, columns = scores.shape[2:4]
-
-#definindo nivel de confiança minimo para considerar as areas da imagem   
 confidence_level = 0.8
 boxes = []
 confidences = []
